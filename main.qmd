@@ -81,3 +81,166 @@ ggplot(model_data, aes(x = major_change, y = FIP_diff)) +
     y = "FIP_diff = FIP_to - FIP_from"
   )
 ```
+
+```{r}
+ggplot(filter(model_data, major_change),
+       aes(x = largest_pitch_change, y = FIP_diff)) +
+  geom_boxplot() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  coord_flip() +
+  labs(
+    title = "FIP Change by Pitch Type Most Involved in Major Usage Change",
+    x = "Pitch type with largest usage change",
+    y = "FIP_diff"
+  )
+```
+
+```{r}
+ggplot(model_data, aes(x = max_abs_pitch_change, y = FIP_diff)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Relationship Between Pitch-Mix Change Size and FIP Change",
+    x = "Largest absolute pitch usage change",
+    y = "FIP_diff"
+  )
+```
+
+```{r}
+model_1 <- lm(
+  FIP_diff ~ max_abs_pitch_change + major_change +
+    FIP_from + age_from + team_changed + factor(year_from),
+  data = model_data
+)
+
+summary(model_1)
+```
+
+```{r}
+model_2 <- lm(
+  FIP_diff ~ FF_change + SI_change + SL_change + FC_change +
+    CH_change + CU_change + FS_change + ST_change +
+    FIP_from + age_from + team_changed + factor(year_from),
+  data = model_data
+)
+
+summary(model_2)
+```
+
+
+Lets try again
+```{r}
+library(tidyverse)
+library(readxl)
+library(broom)
+
+pitch_changes <- read_excel("STAT 470 Project Data-6.xlsx",
+                            sheet = "pitch_changes")
+
+keys <- c(
+  "pitcher", "player_name", "team_from", "team_to",
+  "year_from", "year_to",
+  "age_from", "FIP_from", "age_to", "FIP_to", "FIP_diff"
+)
+
+model_data <- pitch_changes %>%
+  group_by(across(all_of(keys))) %>%
+  summarize(
+    max_abs_pitch_change = max(abs_change, na.rm = TRUE),
+    largest_pitch_change = pitch_type[which.max(abs_change)],
+    largest_change_value = prop_change[which.max(abs_change)],
+    major_change = any(top_5_percent),
+    added_new_pitch = any(!is.na(new_pitch)),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    improved = FIP_diff < 0,
+    team_changed = team_from != team_to
+  )
+
+pitch_wide <- pitch_changes %>%
+  select(
+    all_of(keys),
+    pitch_type,
+    prop_change
+  ) %>%
+  pivot_wider(
+    names_from = pitch_type,
+    values_from = prop_change,
+    names_glue = "{pitch_type}_change",
+    values_fill = 0
+  )
+
+model_data <- model_data %>%
+  left_join(pitch_wide, by = keys)
+
+model_data <- model_data %>%
+  mutate(
+    fastball_change = FF_change + SI_change + FC_change,
+    breaking_change = SL_change + CU_change + KC_change + SV_change + ST_change + CS_change,
+    offspeed_change = CH_change + FS_change,
+
+    abs_fastball_change = abs(FF_change) + abs(SI_change) + abs(FC_change),
+    abs_breaking_change = abs(SL_change) + abs(CU_change) + abs(KC_change) +
+      abs(SV_change) + abs(ST_change) + abs(CS_change),
+    abs_offspeed_change = abs(CH_change) + abs(FS_change),
+
+    reduced_fastball = fastball_change < 0,
+    increased_fastball = fastball_change > 0,
+    increased_breaking = breaking_change > 0,
+    added_new_pitch = as.factor(added_new_pitch),
+    major_change = as.factor(major_change),
+    team_changed = as.factor(team_changed)
+  )
+```
+
+```{r}
+ggplot(model_data, aes(x = FIP_from, y = FIP_diff)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Prior FIP vs Year-to-Year FIP Change",
+    subtitle = "Negative FIP_diff values indicate improvement",
+    x = "FIP in first season",
+    y = "FIP_diff = FIP_to - FIP_from"
+  )
+```
+
+Reduced fastball usage
+```{r}
+ggplot(model_data, aes(x = reduced_fastball, y = FIP_diff)) +
+  geom_boxplot() +
+  geom_jitter(width = 0.15, alpha = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "FIP Change by Reduced Fastball-Family Usage",
+    subtitle = "Fastball-family = four-seam fastballs, sinkers, and cutters",
+    x = "Reduced fastball-family usage?",
+    y = "FIP_diff = FIP_to - FIP_from"
+  )
+model_4 <- lm(
+  FIP_diff ~ reduced_fastball + FIP_from + age_from +
+    team_changed + factor(year_from),
+  data = model_data
+)
+
+summary(model_4)
+tidy(model_4)
+glance(model_4)
+```
+
+```{r}
+ggplot(model_data, aes(x = breaking_change, y = FIP_diff)) +
+  geom_point(alpha = 0.6) +
+  geom_smooth(method = "lm", se = TRUE) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(
+    title = "Breaking-Ball Usage Change vs FIP Change",
+    subtitle = "Breaking balls include sliders, curveballs, sweepers, slurves, and knuckle-curves",
+    x = "Change in breaking-ball usage proportion",
+    y = "FIP_diff = FIP_to - FIP_from"
+  )
+```
